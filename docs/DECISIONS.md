@@ -53,3 +53,12 @@ from the next observation; that observation shows `stopped: false` with
 `frames` omitted-not-lost. `pause` then completes with `reason: pause`. The
 browser lane had this shape only for a timed-out navigation; on a debugger
 it is the ordinary case for a running program.
+
+## ADR-0005: three things folded back from the Delve adapter
+
+1. A launch that fails never sends `initialized`; `createContext` races the
+   launch response so a bad program is `host_failed`, not a hang (test added).
+2. `allThreadsStopped` stamps every open surface with the event's reason
+   and the stopping thread, not a synthetic `all_threads_stopped` reason.
+3. `set_variable` earns `verified` by an independent `evaluate` read-back
+   recorded in `effects[0].read_back`; a disagreeing read is a `divergence`.

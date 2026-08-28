@@ -100,7 +100,8 @@ export class DebugpyHost {
       // debugpy sends `initialized` only after the debuggee is up. With a terminal, that is after the
       // runInTerminal reverse request has been answered — by the client, through a decision token —
       // so the handles are returned first and the launch finishes in the background.
-      const finish = (async () => { await initialized; await client.request('configurationDone', {}, 15000); await launch; })();
+      // A launch that fails never sends `initialized`: race it so the failure surfaces as host_failed rather than a hang.
+      const finish = (async () => { await Promise.race([initialized, launch]); await client.request('configurationDone', {}, 15000); await launch; })();
       if (console_ === 'internalConsole') {
         await finish;
         await this.until(() => main.lifecycle === 'open' && main.state.stopped, 20000, 'debuggee did not stop on entry');
@@ -149,7 +150,7 @@ export class DebugpyHost {
         const surface = byThread(body.threadId) ?? main;
         const state: Stopped = { stopped: true, reason: String(body.reason), hit_breakpoint_ids: (body.hitBreakpointIds as number[] | undefined) ?? [], all_threads_stopped: Boolean(body.allThreadsStopped), ...(body.description ? { description: String(body.description) } : {}) };
         this.transition(surface, state); this.emit(surface, 'stopped', { reason: state.reason, hit_breakpoint_ids: state.hit_breakpoint_ids }, event.seq);
-        if (state.all_threads_stopped) for (const sid of ctx.surfaces) { const other = this.surfaces.get(sid)!; if (other !== surface && other.lifecycle === 'open' && !other.state.stopped) { this.transition(other, { stopped: true, reason: 'all_threads_stopped', all_threads_stopped: true }); this.emit(other, 'stopped', { reason: 'all_threads_stopped', by: surface.id }, event.seq); } }
+        if (state.all_threads_stopped) for (const sid of ctx.surfaces) { const other = this.surfaces.get(sid)!; if (other !== surface && other.lifecycle === 'open' && !other.state.stopped) { this.transition(other, { ...state, hit_breakpoint_ids: [] }); this.emit(other, 'stopped', { reason: state.reason, stopped_thread: surface.id, all_threads_stopped: true }, event.seq); } }
         return;
       }
       case 'continued': {
@@ -363,8 +364,13 @@ export class DebugpyHost {
         const variable = this.checkTarget(surface, intent.target as J, ['variable'], 'set');
         hostInvoked = true;
         const body = await ctx.client.request('setVariable', { variablesReference: variable.parentReference, name: variable.variableName, value: String(params.value ?? '') }, 15000);
-        effects = [{ kind: 'variable.set', name: variable.variableName, value: String(body.value ?? ''), type: body.type ?? null }];
-        verified = true; this.emit(surface, 'variable.set', { name: variable.variableName });
+        // `verified` is earned by an independent read, not taken from the response.
+        const frameId = [...surface.targets.values()].find(t => t.role === 'frame')?.frameId;
+        const readBack = await ctx.client.request('evaluate', { expression: String(variable.variableName), context: 'watch', ...(frameId !== undefined ? { frameId } : {}) }, 15000).then(b => String(b.result ?? ''), () => null);
+        effects = [{ kind: 'variable.set', name: variable.variableName, value: String(body.value ?? ''), type: body.type ?? null, read_back: readBack }];
+        verified = readBack !== null && readBack === String(body.value ?? '');
+        if (!verified) deviations.push({ kind: 'divergence', reason: 'the adapter acknowledged the write but an independent read did not return the new value', object_ids: [String(variable.variableName)], data: { acknowledged: String(body.value ?? ''), read_back: readBack } });
+        this.emit(surface, 'variable.set', { name: variable.variableName });
       } else if (kind === 'host_request.resolve') {
         const record = ctx.hostRequests.get(String(intent.decision_token));
         if (!record || record.status !== 'pending') throw new HostProtoError('precondition_failed', 'decision token is unknown or already resolved', false, { decision_token: intent.decision_token });

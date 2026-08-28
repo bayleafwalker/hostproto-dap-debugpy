@@ -98,7 +98,8 @@ describe('HostProto semantics on a real debugger', () => {
     expect(ev.sc.effects[0]).toMatchObject({ kind: 'evaluated', result: '2' });
     const count = variables.find((t: any) => t.name.startsWith('count'));
     const set = await call('hostproto_surface_act', intent(surface, 'set_variable', { target: count, params: { value: '5' } }));
-    expect(set.sc.effects[0]).toMatchObject({ kind: 'variable.set', name: 'count', value: '5' });
+    expect(set.sc.effects[0]).toMatchObject({ kind: 'variable.set', name: 'count', value: '5', read_back: '5' });
+    expect(set.sc.verified).toBe(true);
     expect(set.sc.revision_after).toBe(set.sc.revision_before);
   });
 
@@ -187,6 +188,11 @@ describe('unknown outcomes and host requests', () => {
     const state = (await call('hostproto_surface_observe', { surface: s, projections: ['state'] })).sc.data.state;
     expect(state.lifecycle).toBe('open'); expect(state.reason).toBe('entry');
     await call('hostproto_context_close', { context: h.context.id });
+  });
+
+  it('a program that does not exist fails the launch honestly instead of hanging', async () => {
+    const { sc, isError } = await call('hostproto_context_create', { program: 'fixtures/missing.py', cwd: ROOT });
+    expect(isError).toBe(true); expect(sc.code).toBe('host_failed'); expect(sc.host_invoked).toBe(true);
   });
 
   it('earns runtime verification only for what ran', async () => {
