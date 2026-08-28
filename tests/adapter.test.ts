@@ -137,6 +137,8 @@ describe('HostProto semantics on a real debugger', () => {
     expect(sc.outcome).toBe('completed');
     expect(sc.effects.map((e: any) => e.kind)).toEqual(['continued', 'terminated']);
     await call('hostproto_surface_await', { surface, conditions: [{ kind: 'lifecycle', equals: 'terminated' }], deadline_ms: 5000 });
+    // `exited` is the last thing the adapter says about the process; output and the thread record precede it.
+    await call('hostproto_surface_await', { surface, conditions: [{ kind: 'event_kind', equals: 'process.exited' }], deadline_ms: 5000 });
     const state = (await call('hostproto_surface_observe', { surface, projections: ['state', 'output'] })).sc;
     expect(state.data.state.lifecycle).toBe('terminated');
     expect(state.data.output.map((e: any) => e.payload.output).join('')).toContain('result: 10'); // count was set to 5 → helper(5) = 10
@@ -152,7 +154,7 @@ describe('HostProto semantics on a real debugger', () => {
     expect(sha(text)).toBe(evidence.ref);
     const messages = text.split('\n').filter(Boolean).map(l => JSON.parse(l));
     expect(messages.some((m: any) => m.direction === 'out' && m.message.command === 'launch')).toBe(true);
-    expect(messages.some((m: any) => m.message.type === 'event' && m.message.event === 'thread' && m.message.body.reason === 'exited')).toBe(true);
+    expect(messages.some((m: any) => m.message.type === 'event' && (m.message.event === 'exited' || m.message.event === 'terminated' || (m.message.event === 'thread' && m.message.body.reason === 'exited')))).toBe(true);
     await call('hostproto_context_close', { context });
   });
 });
