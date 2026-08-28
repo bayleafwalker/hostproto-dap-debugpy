@@ -5,7 +5,11 @@ session exposed through **MCP 2026-07-28**, pinned. Semantics come from
 [hostproto-semantics](https://github.com/bayleafwalker/hostproto-semantics),
 the same eleven bundles the browser adapter pins; this repository owns only
 the DAP client, the thread/target registry, validation, and its own tests.
-It is the runtime the step-3 spike (`docs/DAP_SPIKE.md`) asked for.
+It is the runtime the step-3 spike (`docs/DAP_SPIKE.md`) asked for. Since
+hostproto-semantics ADR-0012 it is a **binding**: `src/binding.ts` supplies
+how debugpy is started and what its `launch` says;
+[hostproto-dap-core](https://github.com/bayleafwalker/hostproto-dap-core)
+(pinned by commit) computes every HostProto semantic and serves MCP.
 
 ## What it does
 
@@ -36,7 +40,6 @@ the same shape as a browser script dialog: handles come back first
 ```sh
 npm ci
 python3 -m venv .venv && .venv/bin/pip install debugpy==1.8.21   # or HOSTPROTO_PYTHON=/path/to/python with debugpy
-npm run schemas
 npm test          # real client ↔ real server over stdio ↔ real debugpy ↔ real Python
 npm start         # stdio server
 ```

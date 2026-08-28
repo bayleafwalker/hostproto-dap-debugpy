@@ -1,6 +1,5 @@
 node_modules/
 dist/
-schemas/
 .venv/
 *.log
 __pycache__/

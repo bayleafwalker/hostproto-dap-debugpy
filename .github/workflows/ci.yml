@@ -11,6 +11,5 @@ jobs:
         with: {python-version: '3.12'}
       - run: python -m venv .venv && .venv/bin/pip install debugpy==1.8.21
       - run: npm ci
-      - run: npm run schemas
       - run: npx tsc -p tsconfig.json
       - run: npm test
